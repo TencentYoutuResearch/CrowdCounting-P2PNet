@@ -85,8 +85,6 @@ def main(args, debug=False):
     points = outputs_points[outputs_scores > threshold].detach().cpu().numpy().tolist()
     predict_cnt = int((outputs_scores > threshold).sum())
 
-    outputs_scores = torch.nn.functional.softmax(outputs['pred_logits'], -1)[:, :, 1][0]
-
     outputs_points = outputs['pred_points'][0]
     # draw the predictions
     size = 2
