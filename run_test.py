@@ -85,7 +85,6 @@ def main(args, debug=False):
     points = outputs_points[outputs_scores > threshold].detach().cpu().numpy().tolist()
     predict_cnt = int((outputs_scores > threshold).sum())
 
-    outputs_points = outputs['pred_points'][0]
     # draw the predictions
     size = 2
     img_to_draw = cv2.cvtColor(np.array(img_raw), cv2.COLOR_RGB2BGR)
