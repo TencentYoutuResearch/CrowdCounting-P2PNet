@@ -43,7 +43,7 @@ def main(args, debug=False):
     os.environ["CUDA_VISIBLE_DEVICES"] = '{}'.format(args.gpu_id)
 
     print(args)
-    device = torch.device('cuda')
+    device = torch.device('cpu')
     # get the P2PNet
     model = build_model(args)
     # move to GPU
