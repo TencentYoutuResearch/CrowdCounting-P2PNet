@@ -242,23 +242,24 @@ class P2PNet(nn.Module):
 
         return out
 
-    def generate_points(self, frame: torch.Tensor, threshold: float = 0.5) -> list[Tuple[int, int]]:
+    def generate_points(self, frame: np.array, threshold: float = 0.5, device: str = 'cpu') -> list[Tuple[int, int]]:
         """
         Detect human figures on the frame
         :param frame: frame with human figures
         :param threshold: threshold of corrert classification confidence. Refer to P2PNet article for more info.
+        :param device: device to load frame to
         :returns: list of points on the frame
         """
-        img = standard_transforms.ToPILImage()(frame.permute(2, 0, 1)).convert("RGB")
-        width, height = img.size
+        img_raw = Image.fromarray(frame, mode='RGB')
+        width, height = img_raw.size
         new_width = width // 128 * 128
         new_height = height // 128 * 128
-        img = img.resize((new_width, new_height), Image.ANTIALIAS)
-        img = self.transform(img)
+        img_raw = img_raw.resize((new_width, new_height), Image.ANTIALIAS)
+        img = self.transform(img_raw)
 
         samples = torch.Tensor(img).unsqueeze(0)
-        samples.to(frame.device)
-        outputs = self.forward(samples)
+        samples.to(device)
+        outputs = self(samples)
         outputs_scores = torch.nn.functional.softmax(outputs['pred_logits'], -1)[:, :, 1][0]
 
         outputs_points = outputs['pred_points'][0]
