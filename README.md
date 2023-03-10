@@ -76,7 +76,7 @@ D2CNet | <u>0.700</u> | **0.741**  | 0.662 |
 * Organize your datasets as required
 * Install Python dependencies. We use python 3.6.5 and pytorch 1.5.0
 ```
-pip install -r requirements.txt
+c:\\dpm\py_env\python -m pip install -r C:\dpm\cv\CrowdCounting-P2PNet\requirements.txt --trusted-host pypi.org --trusted-host pypi.python.org --trusted-host files.pythonhosted.org
 ```
 
 ## Organize the counting dataset
