@@ -12,6 +12,7 @@ from .matcher import build_matcher_crowd
 import numpy as np
 import time
 
+
 # the network frmawork of the regression branch
 class RegressionModel(nn.Module):
     def __init__(self, num_features_in, num_anchor_points=4, feature_size=256):
@@ -30,6 +31,7 @@ class RegressionModel(nn.Module):
         self.act4 = nn.ReLU()
 
         self.output = nn.Conv2d(feature_size, num_anchor_points * 2, kernel_size=3, padding=1)
+
     # sub-branch forward
     def forward(self, x):
         out = self.conv1(x)
@@ -43,6 +45,7 @@ class RegressionModel(nn.Module):
         out = out.permute(0, 2, 3, 1)
 
         return out.contiguous().view(out.shape[0], -1, 2)
+
 
 # the network frmawork of the classification branch
 class ClassificationModel(nn.Module):
@@ -66,6 +69,7 @@ class ClassificationModel(nn.Module):
 
         self.output = nn.Conv2d(feature_size, num_anchor_points * num_classes, kernel_size=3, padding=1)
         self.output_act = nn.Sigmoid()
+
     # sub-branch forward
     def forward(self, x):
         out = self.conv1(x)
@@ -84,6 +88,7 @@ class ClassificationModel(nn.Module):
 
         return out2.contiguous().view(x.shape[0], -1, self.num_classes)
 
+
 # generate the reference points in grid layout
 def generate_anchor_points(stride=16, row=3, line=3):
     row_step = stride / row
@@ -99,6 +104,8 @@ def generate_anchor_points(stride=16, row=3, line=3):
     )).transpose()
 
     return anchor_points
+
+
 # shift the meta-anchor to get an acnhor points
 def shift(shape, stride, anchor_points):
     shift_x = (np.arange(0, shape[1]) + 0.5) * stride
@@ -116,6 +123,7 @@ def shift(shape, stride, anchor_points):
     all_anchor_points = all_anchor_points.reshape((K * A, 2))
 
     return all_anchor_points
+
 
 # this class generate all reference points on all pyramid levels
 class AnchorPoints(nn.Module):
@@ -141,7 +149,7 @@ class AnchorPoints(nn.Module):
         all_anchor_points = np.zeros((0, 2)).astype(np.float32)
         # get reference points for each level
         for idx, p in enumerate(self.pyramid_levels):
-            anchor_points = generate_anchor_points(2**p, row=self.row, line=self.line)
+            anchor_points = generate_anchor_points(2 ** p, row=self.row, line=self.line)
             shifted_anchor_points = shift(image_shapes[idx], self.strides[idx], anchor_points)
             all_anchor_points = np.append(all_anchor_points, shifted_anchor_points, axis=0)
 
@@ -151,6 +159,7 @@ class AnchorPoints(nn.Module):
             return torch.from_numpy(all_anchor_points.astype(np.float32)).cuda()
         else:
             return torch.from_numpy(all_anchor_points.astype(np.float32))
+
 
 class Decoder(nn.Module):
     def __init__(self, C3_size, C4_size, C5_size, feature_size=256):
@@ -171,7 +180,6 @@ class Decoder(nn.Module):
         self.P3_upsampled = nn.Upsample(scale_factor=2, mode='nearest')
         self.P3_2 = nn.Conv2d(feature_size, feature_size, kernel_size=3, stride=1, padding=1)
 
-
     def forward(self, inputs):
         C3, C4, C5 = inputs
 
@@ -190,6 +198,7 @@ class Decoder(nn.Module):
 
         return [P3_x, P4_x, P5_x]
 
+
 # the defenition of the P2PNet model
 class P2PNet(nn.Module):
     def __init__(self, backbone, row=2, line=2):
@@ -201,12 +210,16 @@ class P2PNet(nn.Module):
 
         self.regression = RegressionModel(num_features_in=256, num_anchor_points=num_anchor_points)
         self.classification = ClassificationModel(num_features_in=256, \
-                                            num_classes=self.num_classes, \
-                                            num_anchor_points=num_anchor_points)
+                                                  num_classes=self.num_classes, \
+                                                  num_anchor_points=num_anchor_points)
 
-        self.anchor_points = AnchorPoints(pyramid_levels=[3,], row=row, line=line)
+        self.anchor_points = AnchorPoints(pyramid_levels=[3, ], row=row, line=line)
 
         self.fpn = Decoder(256, 512, 512)
+        self.transform = standard_transforms.Compose([
+            standard_transforms.ToTensor(),
+            standard_transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        ])
 
     def forward(self, samples: NestedTensor):
         # get the backbone features
@@ -216,15 +229,37 @@ class P2PNet(nn.Module):
 
         batch_size = features[0].shape[0]
         # run the regression and classification branch
-        regression = self.regression(features_fpn[1]) * 100 # 8x
+        regression = self.regression(features_fpn[1]) * 100  # 8x
         classification = self.classification(features_fpn[1])
         anchor_points = self.anchor_points(samples).repeat(batch_size, 1, 1)
         # decode the points as prediction
         output_coord = regression + anchor_points
         output_class = classification
         out = {'pred_logits': output_class, 'pred_points': output_coord}
-       
+
         return out
+
+    def generate_points(self, frame: torch.Tensor, threshold: float = 0.5) -> list[Tuple[int, int]]:
+        """
+        Detect human figures on the frame
+        :param frame: frame with human figures
+        :param threshold: threshold of corrert classification confidence. Refer to P2PNet article for more info.
+        :returns: list of points on the frame
+        """
+        width, height = frame.size
+        new_width = width // 128 * 128
+        new_height = height // 128 * 128
+        frame_raw = frame_raw.resize((new_width, new_height))
+        frame_new = transform(frame_new)
+
+        samples = torch.Tensor(img).unsqueeze(0)
+        outputs = self.forward(samples)
+        outputs_scores = torch.nn.functional.softmax(outputs['pred_logits'], -1)[:, :, 1][0]
+
+        outputs_points = outputs['pred_points'][0]
+        points = outputs_points[outputs_scores > threshold].detach().cpu().numpy().astype(int).tolist()
+        return points
+
 
 class SetCriterion_Crowd(nn.Module):
 
@@ -322,6 +357,7 @@ class SetCriterion_Crowd(nn.Module):
 
         return losses
 
+
 # create the P2PNet model
 def build(args, training):
     # treats persons as a single class
@@ -329,14 +365,14 @@ def build(args, training):
 
     backbone = build_backbone(args)
     model = P2PNet(backbone, args.row, args.line)
-    if not training: 
+    if not training:
         return model
 
     weight_dict = {'loss_ce': 1, 'loss_points': args.point_loss_coef}
     losses = ['labels', 'points']
     matcher = build_matcher_crowd(args)
     criterion = SetCriterion_Crowd(num_classes, \
-                                matcher=matcher, weight_dict=weight_dict, \
-                                eos_coef=args.eos_coef, losses=losses)
+                                   matcher=matcher, weight_dict=weight_dict, \
+                                   eos_coef=args.eos_coef, losses=losses)
 
     return model, criterion
