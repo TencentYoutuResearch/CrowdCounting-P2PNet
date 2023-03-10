@@ -25,8 +25,8 @@ model_urls = {
 
 
 model_paths = {
-    'vgg16_bn': './models_storage/vgg16_bn-6c64b313.pth',
-    'vgg16': './models_storage/vgg16-397923af.pth',
+    'vgg16_bn': r'C:\dpm\cv\p2pnet\models_storage\vgg16_bn-6c64b313.pth',
+    'vgg16': r'C:\dpm\cv\p2pnet\models_storage\vgg16-397923af.pth',
 
 }
 
