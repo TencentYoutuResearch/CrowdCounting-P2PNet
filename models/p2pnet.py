@@ -1,3 +1,7 @@
+from typing import Tuple
+
+import numpy as np
+import torchvision.transforms as standard_transforms
 import torch
 import torch.nn.functional as F
 from torch import nn
@@ -8,9 +12,6 @@ from util.misc import (NestedTensor, nested_tensor_from_tensor_list,
 
 from .backbone import build_backbone
 from .matcher import build_matcher_crowd
-
-import numpy as np
-import time
 
 
 # the network frmawork of the regression branch
@@ -249,10 +250,10 @@ class P2PNet(nn.Module):
         width, height = frame.size
         new_width = width // 128 * 128
         new_height = height // 128 * 128
-        frame_raw = frame_raw.resize((new_width, new_height))
-        frame_new = transform(frame_new)
+        frame_raw = frame.resize((new_width, new_height))
+        frame_new = self.transform(frame_raw)
 
-        samples = torch.Tensor(img).unsqueeze(0)
+        samples = torch.Tensor(frame_new).unsqueeze(0)
         outputs = self.forward(samples)
         outputs_scores = torch.nn.functional.softmax(outputs['pred_logits'], -1)[:, :, 1][0]
 
