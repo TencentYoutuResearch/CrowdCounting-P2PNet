@@ -15,11 +15,13 @@ from engine import *
 from models import build_model
 import os
 import warnings
+
 warnings.filterwarnings('ignore')
+
 
 def get_args_parser():
     parser = argparse.ArgumentParser('Set parameters for P2PNet evaluation', add_help=False)
-    
+
     # * Backbone
     parser.add_argument('--backbone', default='vgg16_bn', type=str,
                         help="name of the convolutional backbone to use")
@@ -38,8 +40,8 @@ def get_args_parser():
 
     return parser
 
-def main(args, debug=False):
 
+def main(args, debug=False):
     os.environ["CUDA_VISIBLE_DEVICES"] = '{}'.format(args.gpu_id)
 
     print(args)
@@ -56,7 +58,7 @@ def main(args, debug=False):
     model.eval()
     # create the pre-processing transform
     transform = standard_transforms.Compose([
-        standard_transforms.ToTensor(), 
+        standard_transforms.ToTensor(),
         standard_transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
     ])
 
