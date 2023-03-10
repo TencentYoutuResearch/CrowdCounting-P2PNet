@@ -1,14 +1,16 @@
 from typing import Tuple
 
 import numpy as np
+import torchvision.transforms
 import torchvision.transforms as standard_transforms
 import torch
 import torch.nn.functional as F
 from torch import nn
+from PIL import Image
 
-from util.misc import (NestedTensor, nested_tensor_from_tensor_list,
-                       accuracy, get_world_size, interpolate,
-                       is_dist_avail_and_initialized)
+from p2pnet.util.misc import (NestedTensor, nested_tensor_from_tensor_list,
+                              accuracy, get_world_size, interpolate,
+                              is_dist_avail_and_initialized)
 
 from .backbone import build_backbone
 from .matcher import build_matcher_crowd
@@ -247,13 +249,15 @@ class P2PNet(nn.Module):
         :param threshold: threshold of corrert classification confidence. Refer to P2PNet article for more info.
         :returns: list of points on the frame
         """
-        width, height = frame.size
+        img = standard_transforms.ToPILImage()(frame.permute(2, 0, 1)).convert("RGB")
+        width, height = img.size
         new_width = width // 128 * 128
         new_height = height // 128 * 128
-        frame_raw = frame.resize((new_width, new_height))
-        frame_new = self.transform(frame_raw)
+        img = img.resize((new_width, new_height), Image.ANTIALIAS)
+        img = self.transform(img)
 
-        samples = torch.Tensor(frame_new).unsqueeze(0)
+        samples = torch.Tensor(img).unsqueeze(0)
+        samples.to(frame.device)
         outputs = self.forward(samples)
         outputs_scores = torch.nn.functional.softmax(outputs['pred_logits'], -1)[:, :, 1][0]
 
