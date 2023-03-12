@@ -136,9 +136,17 @@ By default, a periodic evaluation will be conducted on the validation set.
 
 A trained model (with an MAE of **51.96**) on SHTechPartA is available at "./weights", run the following commands to launch a visualization demo:
 
+### Testing on an image
 ```
 CUDA_VISIBLE_DEVICES=0 python run_test.py --weight_path ./weights/SHTechA.pth --output_dir ./logs/
 ```
+### Testing on a video
+```
+CUDA_VISIBLE_DEVICES=0 python video_demo.py --weight_path ./weights/SHTechA.pth 
+```
+#### A demo of crowd counting on a video
+![demo](https://user-images.githubusercontent.com/65148928/224567663-2434449f-fad4-44cb-8806-1ec0cfe518fc.gif)
+
 
 ## Acknowledgements
 
