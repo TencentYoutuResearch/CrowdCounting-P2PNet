@@ -149,6 +149,11 @@ def main(args, debug=False):
             '''write in out_video'''
             res = cv2.resize(res, (1280,1280))
             out.write(res)
+            
+            cv2.putText(img_to_draw, "Count:" + str(predict_cnt), (30, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+            cv2.imshow("dst",img_to_draw)
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+               break
 
 
 
