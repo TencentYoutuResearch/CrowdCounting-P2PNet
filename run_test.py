@@ -29,12 +29,12 @@ def get_args_parser():
     parser.add_argument('--line', default=2, type=int,
                         help="line number of anchor points")
 
-    parser.add_argument('--output_dir', default='',
-                        help='path where to save')
-    parser.add_argument('--weight_path', default='',
-                        help='path where the trained weights saved')
+    parser.add_argument('--output_dir', default='./results',
+                        help='path where to save') # 输出路径
+    parser.add_argument('--weight_path', default='./ckpt/best_mae.pth',
+                        help='path where the trained weights saved') # 权重路径
 
-    parser.add_argument('--gpu_id', default=0, type=int, help='the gpu used for evaluation')
+    parser.add_argument('--gpu_id', default=1, type=int, help='the gpu used for evaluation')
 
     return parser
 
@@ -59,9 +59,10 @@ def main(args, debug=False):
         standard_transforms.ToTensor(), 
         standard_transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
     ])
-
+    # set the test path here
+    test_path = "/home/ipad_remote/P2PNET_ROOT/dota_split/DOTA_split_small/val/images/"
     # set your image path here
-    img_path = "./vis/demo1.jpg"
+    img_path = "./vis/P0696__1024__515___0.png" # 测试数据图片
     # load the images
     img_raw = Image.open(img_path).convert('RGB')
     # round the size
