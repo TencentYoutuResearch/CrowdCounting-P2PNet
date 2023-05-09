@@ -7,12 +7,11 @@ from PIL import Image
 import cv2
 import glob
 import scipy.io as io
-
 class SHHA(Dataset):
     def __init__(self, data_root, transform=None, train=False, patch=False, flip=False):
         self.root_path = data_root
-        self.train_lists = "shanghai_tech_part_a_train.list"
-        self.eval_list = "shanghai_tech_part_a_test.list"
+        self.train_lists = "DOTA_train.list"
+        self.eval_list = "DOTA_test.list"
         # there may exist multiple list files
         self.img_list_file = self.train_lists.split(',')
         if train:
@@ -66,7 +65,7 @@ class SHHA(Dataset):
                 point *= scale
         # random crop augumentaiton
         if self.train and self.patch:
-            img, point = random_crop(img, point)
+            img, point = random_crop(img, point)   # 经过随机crop之后point很多会变成空list
             for i, _ in enumerate(point):
                 point[i] = torch.Tensor(point[i])
         # random flipping
@@ -84,11 +83,10 @@ class SHHA(Dataset):
         target = [{} for i in range(len(point))]
         for i, _ in enumerate(point):
             target[i]['point'] = torch.Tensor(point[i])
-            image_id = int(img_path.split('/')[-1].split('.')[0].split('_')[-1])
+            image_id = int(img_path.split('/')[-1].split('.')[0].split('_')[-1]) # TODO 这里的image_id得改
             image_id = torch.Tensor([image_id]).long()
-            target[i]['image_id'] = image_id
+            target[i]['image_id'] = image_id 
             target[i]['labels'] = torch.ones([point[i].shape[0]]).long()
-
         return img, target
 
 
@@ -109,8 +107,8 @@ def load_data(img_gt_path, train):
 
 # random crop augumentation
 def random_crop(img, den, num_patch=4):
-    half_h = 128
-    half_w = 128
+    half_h = 128  # 更改crop_size, 原128
+    half_w = 128  # 更改crop_size, 原128
     result_img = np.zeros([num_patch, img.shape[0], half_h, half_w])
     result_den = []
     # crop num_patch for each image
