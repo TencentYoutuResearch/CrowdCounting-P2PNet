@@ -73,6 +73,10 @@ def get_args_parser():
                         help='frequency of evaluation, default setting is evaluating in every 5 epoch')
     parser.add_argument('--gpu_id', default=0, type=int, help='the gpu used for training')
 
+    # Multi-class classification parameters
+    parser.add_argument('--num_classes', default=1, type=int,
+                        help="Number of distinct object classes (excluding background)")
+
     return parser
 
 def main(args):

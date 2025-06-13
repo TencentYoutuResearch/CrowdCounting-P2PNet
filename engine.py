@@ -126,34 +126,113 @@ def evaluate_crowd_no_overlap(model, data_loader, device, vis_dir=None):
     model.eval()
 
     metric_logger = utils.MetricLogger(delimiter="  ")
-    metric_logger.add_meter('class_error', utils.SmoothedValue(window_size=1, fmt='{value:.2f}'))
-    # run inference on all images to calc MAE
-    maes = []
-    mses = []
-    for samples, targets in data_loader:
+    # Assuming class_error is not the primary metric for multi-class crowd counting here.
+    # metric_logger.add_meter('class_error', utils.SmoothedValue(window_size=1, fmt='{value:.2f}'))
+
+    # Determine N (number of object classes) from the model output structure
+    # This needs to be done once, can be outside the loop if model structure is fixed
+    # Or fetched from model config if available. For now, infer from first output.
+    _model_output_checked = False
+    N = 0
+
+    # Initialize lists for overall and per-class metrics
+    overall_maes_list = []
+    overall_mses_list = []
+    # Deferred initialization for per_class lists after N is known
+
+    for i, (samples, targets) in enumerate(data_loader):
         samples = samples.to(device)
+        # Targets are already expected to be on device by this point based on train_one_epoch
+        # targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
 
         outputs = model(samples)
-        outputs_scores = torch.nn.functional.softmax(outputs['pred_logits'], -1)[:, :, 1][0]
 
-        outputs_points = outputs['pred_points'][0]
+        if not _model_output_checked:
+            if 'pred_logits' not in outputs or outputs['pred_logits'].ndim < 3:
+                raise ValueError("pred_logits not found in model output or has unexpected shape.")
+            N = outputs['pred_logits'].shape[-1] - 1 # N object classes + 1 background
+            if N <= 0:
+                raise ValueError(f"Inferred N={N} classes. Must be > 0.")
+            print(f"Inferred N = {N} object classes from model output.")
+            # Now initialize per-class metric lists
+            maes_per_class_list = [[] for _ in range(N + 1)] # Index 0 unused
+            mses_per_class_list = [[] for _ in range(N + 1)] # Index 0 unused
+            _model_output_checked = True
 
-        gt_cnt = targets[0]['point'].shape[0]
-        # 0.5 is used by default
-        threshold = 0.5
+        # Assuming batch size is 1 for evaluation, as in original code
+        # Process Model Outputs
+        probs = torch.nn.functional.softmax(outputs['pred_logits'][0], dim=-1) # Shape: (num_queries, N+1)
+        pred_class_labels = torch.argmax(probs, dim=1) # Shape: (num_queries,) values 0 to N
+        pred_scores = probs.max(dim=1)[0] # Shape: (num_queries,)
+        outputs_points = outputs['pred_points'][0] # Shape: (num_queries, 2)
 
-        points = outputs_points[outputs_scores > threshold].detach().cpu().numpy().tolist()
-        predict_cnt = int((outputs_scores > threshold).sum())
+        # Filter Predictions
+        threshold = 0.5 # As used in original code
+        valid_scores_mask = pred_scores > threshold
+        valid_class_mask = pred_class_labels > 0 # Ignore background predictions (class 0)
+        final_mask = valid_scores_mask & valid_class_mask
+
+        filtered_pred_class_labels = pred_class_labels[final_mask] # 1-indexed effectively due to valid_class_mask
+        filtered_points = outputs_points[final_mask]
+
+        # Calculate Per-Class Predicted Counts
+        predict_counts_per_class = torch.zeros(N + 1, device=device, dtype=torch.float) # Idx 0 for bg (unused), 1 to N
+        for label_idx in filtered_pred_class_labels:
+            # pred_class_labels are 0 to N. Since we filtered >0, these are 1 to N.
+            predict_counts_per_class[label_idx] += 1
+
+        # Calculate Per-Class Ground Truth Counts
+        # gt_labels are 1-indexed (1 to N) as per problem description
+        gt_labels = targets[0]['labels'] # Assuming batch_size 1, labels are on device
+        gt_counts_per_class = torch.zeros(N + 1, device=device, dtype=torch.float) # Idx 0 for bg (unused), 1 to N
+        for label_idx in gt_labels:
+            if 1 <= label_idx <= N: # Ensure labels are within expected range
+                gt_counts_per_class[label_idx] += 1
+            # else: print(f"Warning: GT label {label_idx} out of range 1-{N}")
+
+
+        # Calculate MAE and MSE Metrics for the current sample
+        for c in range(1, N + 1): # For each object class (1 to N)
+            mae_c = torch.abs(predict_counts_per_class[c] - gt_counts_per_class[c])
+            mse_c = (predict_counts_per_class[c] - gt_counts_per_class[c])**2
+            maes_per_class_list[c].append(mae_c.item())
+            mses_per_class_list[c].append(mse_c.item())
+
+        total_predicted_count = predict_counts_per_class[1:].sum() # Sum over object classes 1 to N
+        total_gt_count = gt_counts_per_class[1:].sum() # Sum over object classes 1 to N
+
+        overall_mae = torch.abs(total_predicted_count - total_gt_count)
+        overall_mse = (total_predicted_count - total_gt_count)**2
+        overall_maes_list.append(overall_mae.item())
+        overall_mses_list.append(overall_mse.item())
+
         # if specified, save the visualized images
-        if vis_dir is not None: 
-            vis(samples, targets, [points], vis_dir)
-        # accumulate MAE, MSE
-        mae = abs(predict_cnt - gt_cnt)
-        mse = (predict_cnt - gt_cnt) * (predict_cnt - gt_cnt)
-        maes.append(float(mae))
-        mses.append(float(mse))
-    # calc MAE, MSE
-    mae = np.mean(maes)
-    mse = np.sqrt(np.mean(mses))
+        # Update vis call: pass filtered_points.
+        # For multi-class vis, vis function would need enhancement. For now, pass filtered points.
+        if vis_dir is not None:
+            # vis expects a list of lists of points if batch > 1, here batch is 1
+            vis(samples, targets, [filtered_points.detach().cpu().numpy().tolist()], vis_dir, des=f"sample_{i}")
 
-    return mae, mse
+    # Aggregate and Return Metrics (after the loop)
+    results = {}
+    if not _model_output_checked : # Handle case where data_loader was empty
+        print("Warning: Data loader was empty, cannot determine N or compute metrics.")
+        # Return empty or default results
+        results['overall_mae'] = 0
+        results['overall_mse'] = 0
+        return results
+
+    for c in range(1, N + 1):
+        results[f'mae_class_{c}'] = np.mean(maes_per_class_list[c]) if maes_per_class_list[c] else 0
+        results[f'mse_class_{c}'] = np.sqrt(np.mean(mses_per_class_list[c])) if mses_per_class_list[c] else 0
+
+    results['overall_mae'] = np.mean(overall_maes_list) if overall_maes_list else 0
+    # MSE in this context is usually RMSE for crowd counting (sqrt of mean of squared errors)
+    results['overall_mse'] = np.sqrt(np.mean(overall_mses_list)) if overall_mses_list else 0
+
+    # Log overall MAE/MSE using metric_logger if desired, though train.py doesn't use it for eval log
+    # metric_logger.update(overall_mae=results['overall_mae'])
+    # metric_logger.synchronize_between_processes()
+    # print("Averaged stats:", metric_logger) # Not standard for this eval function
+
+    return results

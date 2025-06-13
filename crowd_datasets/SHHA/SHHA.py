@@ -50,7 +50,7 @@ class SHHA(Dataset):
         img_path = self.img_list[index]
         gt_path = self.img_map[img_path]
         # load image and ground truth
-        img, point = load_data((img_path, gt_path), self.train)
+        img, points_with_labels = load_data((img_path, gt_path), self.train)
         # applu augumentation
         if self.transform is not None:
             img = self.transform(img)
@@ -63,31 +63,41 @@ class SHHA(Dataset):
             # scale the image and points
             if scale * min_size > 128:
                 img = torch.nn.functional.upsample_bilinear(img.unsqueeze(0), scale_factor=scale).squeeze(0)
-                point *= scale
+                points_with_labels[:, :2] *= scale # Scale only x, y coordinates
         # random crop augumentaiton
         if self.train and self.patch:
-            img, point = random_crop(img, point)
-            for i, _ in enumerate(point):
-                point[i] = torch.Tensor(point[i])
+            # random_crop now returns result_img, result_points_with_labels
+            img, points_with_labels_list = random_crop(img, points_with_labels)
+            # Process each item in the list (each patch)
+            processed_points_with_labels = []
+            for item in points_with_labels_list:
+                processed_points_with_labels.append(torch.Tensor(item))
+            points_with_labels = processed_points_with_labels
+        else: # If not patching, ensure points_with_labels is a list for consistency
+            points_with_labels = [torch.Tensor(points_with_labels)]
+
         # random flipping
         if random.random() > 0.5 and self.train and self.flip:
             # random flip
             img = torch.Tensor(img[:, :, :, ::-1].copy())
-            for i, _ in enumerate(point):
-                point[i][:, 0] = 128 - point[i][:, 0]
-
-        if not self.train:
-            point = [point]
+            for i, _ in enumerate(points_with_labels):
+                points_with_labels[i][:, 0] = 128 - points_with_labels[i][:, 0]
 
         img = torch.Tensor(img)
         # pack up related infos
-        target = [{} for i in range(len(point))]
-        for i, _ in enumerate(point):
-            target[i]['point'] = torch.Tensor(point[i])
+        target = [{} for _ in range(len(points_with_labels))]
+        for i, current_points_with_labels in enumerate(points_with_labels):
+            # Ensure current_points_with_labels is a tensor
+            if not isinstance(current_points_with_labels, torch.Tensor):
+                current_points_with_labels = torch.Tensor(current_points_with_labels)
+
+            target[i]['point'] = current_points_with_labels[:, :2] # x, y coordinates
             image_id = int(img_path.split('/')[-1].split('.')[0].split('_')[-1])
             image_id = torch.Tensor([image_id]).long()
             target[i]['image_id'] = image_id
-            target[i]['labels'] = torch.ones([point[i].shape[0]]).long()
+            # Use class_id from points_with_labels, convert to int, and add 1 (1-indexed)
+            labels = current_points_with_labels[:, 2].long() + 1
+            target[i]['labels'] = labels
 
         return img, target
 
@@ -98,21 +108,23 @@ def load_data(img_gt_path, train):
     img = cv2.imread(img_path)
     img = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
     # load ground truth points
-    points = []
+    points_with_labels = []
     with open(gt_path) as f_label:
         for line in f_label:
-            x = float(line.strip().split(' ')[0])
-            y = float(line.strip().split(' ')[1])
-            points.append([x, y])
+            parts = line.strip().split(' ')
+            x = float(parts[0])
+            y = float(parts[1])
+            class_id = int(parts[2]) # Assuming class_id is an integer
+            points_with_labels.append([x, y, class_id])
 
-    return img, np.array(points)
+    return img, np.array(points_with_labels)
 
 # random crop augumentation
-def random_crop(img, den, num_patch=4):
+def random_crop(img, points_with_labels, num_patch=4):
     half_h = 128
     half_w = 128
     result_img = np.zeros([num_patch, img.shape[0], half_h, half_w])
-    result_den = []
+    result_points_with_labels = []
     # crop num_patch for each image
     for i in range(num_patch):
         start_h = random.randint(0, img.size(1) - half_h)
@@ -121,13 +133,14 @@ def random_crop(img, den, num_patch=4):
         end_w = start_w + half_w
         # copy the cropped rect
         result_img[i] = img[:, start_h:end_h, start_w:end_w]
-        # copy the cropped points
-        idx = (den[:, 0] >= start_w) & (den[:, 0] <= end_w) & (den[:, 1] >= start_h) & (den[:, 1] <= end_h)
-        # shift the corrdinates
-        record_den = den[idx]
-        record_den[:, 0] -= start_w
-        record_den[:, 1] -= start_h
+        # copy the cropped points and labels
+        idx = (points_with_labels[:, 0] >= start_w) & (points_with_labels[:, 0] <= end_w) & \
+              (points_with_labels[:, 1] >= start_h) & (points_with_labels[:, 1] <= end_h)
+        # shift the corrdinates and keep labels
+        record_points_with_labels = points_with_labels[idx]
+        record_points_with_labels[:, 0] -= start_w
+        record_points_with_labels[:, 1] -= start_h
 
-        result_den.append(record_den)
+        result_points_with_labels.append(record_points_with_labels)
 
-    return result_img, result_den
+    return result_img, result_points_with_labels

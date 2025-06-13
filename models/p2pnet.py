@@ -192,16 +192,17 @@ class Decoder(nn.Module):
 
 # the defenition of the P2PNet model
 class P2PNet(nn.Module):
-    def __init__(self, backbone, row=2, line=2):
+    def __init__(self, backbone, row=2, line=2, num_object_classes=1):
         super().__init__()
         self.backbone = backbone
-        self.num_classes = 2
+        # self.num_classes = 2 # Removed: No longer hardcoded
         # the number of all anchor points
         num_anchor_points = row * line
 
         self.regression = RegressionModel(num_features_in=256, num_anchor_points=num_anchor_points)
+        # num_classes for ClassificationModel should be num_object_classes + 1 (for background)
         self.classification = ClassificationModel(num_features_in=256, \
-                                            num_classes=self.num_classes, \
+                                            num_classes=num_object_classes + 1, \
                                             num_anchor_points=num_anchor_points)
 
         self.anchor_points = AnchorPoints(pyramid_levels=[3,], row=row, line=line)
@@ -324,18 +325,21 @@ class SetCriterion_Crowd(nn.Module):
 
 # create the P2PNet model
 def build(args, training):
-    # treats persons as a single class
-    num_classes = 1
+    # num_classes is N, the number of distinct object classes
+    # This value comes from args.num_classes
+    # num_classes = 1 # Old: treats persons as a single class
 
     backbone = build_backbone(args)
-    model = P2PNet(backbone, args.row, args.line)
+    # Pass args.num_classes as num_object_classes to P2PNet
+    model = P2PNet(backbone, args.row, args.line, num_object_classes=args.num_classes)
     if not training: 
         return model
 
     weight_dict = {'loss_ce': 1, 'loss_points': args.point_loss_coef}
     losses = ['labels', 'points']
     matcher = build_matcher_crowd(args)
-    criterion = SetCriterion_Crowd(num_classes, \
+    # SetCriterion_Crowd's num_classes should be N (number of object classes)
+    criterion = SetCriterion_Crowd(num_classes=args.num_classes, \
                                 matcher=matcher, weight_dict=weight_dict, \
                                 eos_coef=args.eos_coef, losses=losses)
 
