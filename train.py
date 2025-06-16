@@ -188,29 +188,44 @@ def main(args):
         # run evaluation
         if epoch % args.eval_freq == 0 and epoch != 0:
             t1 = time.time()
-            result = evaluate_crowd_no_overlap(model, data_loader_val, device)
+            result = evaluate_crowd_no_overlap(model, data_loader_val, device) # result is now a dict
             t2 = time.time()
 
-            mae.append(result[0])
-            mse.append(result[1])
-            # print the evaluation results
+            # Adjust Metric Storage
+            current_overall_mae = result.get('overall_mae', 0) # Default to 0 if key missing
+            current_overall_rmse = result.get('overall_mse', 0) # This is overall_rmse
+            mae.append(current_overall_mae)
+            mse.append(current_overall_rmse) # mse list now stores overall RMSE
+
+            # Update Print Statements
             print('=======================================test=======================================')
-            print("mae:", result[0], "mse:", result[1], "time:", t2 - t1, "best mae:", np.min(mae), )
+            print(f"Epoch: {epoch}, Evaluation Time: {t2 - t1:.2f}s")
+            log_string_parts = []
+            for key, value in result.items():
+                print(f"{key}: {value:.4f}", end='; ')
+                log_string_parts.append(f"{key}: {value:.4f}")
+            print(f"best overall_mae: {np.min(mae):.4f}")
+            log_string_parts.append(f"best overall_mae: {np.min(mae):.4f}")
+            print('\n=======================================test=======================================')
+
+            # Update File Logging (run_log.txt)
             with open(run_log_name, "a") as log_file:
-                log_file.write("mae:{}, mse:{}, time:{}, best mae:{}".format(result[0], 
-                                result[1], t2 - t1, np.min(mae)))
-            print('=======================================test=======================================')
-            # recored the evaluation results
+                log_file.write(f"\nEpoch {epoch} Evaluation @ step {step}:\n")
+                for key, value in result.items():
+                    log_file.write(f"  {key}: {value:.4f}\n")
+                log_file.write(f"  best_overall_mae_so_far: {np.min(mae):.4f}\n")
+                log_file.write(f"  eval_time: {t2 - t1:.2f}s\n")
+
+            # Update TensorBoard Logging
             if writer is not None:
-                with open(run_log_name, "a") as log_file:
-                    log_file.write("metric/mae@{}: {}".format(step, result[0]))
-                    log_file.write("metric/mse@{}: {}".format(step, result[1]))
-                writer.add_scalar('metric/mae', result[0], step)
-                writer.add_scalar('metric/mse', result[1], step)
+                for key, value in result.items():
+                    writer.add_scalar(f'metric/{key}', value, step)
+                # Explicitly log overall best MAE if desired, though it's implicitly tracked by `mae` list min
+                # writer.add_scalar('metric/best_overall_mae_so_far', np.min(mae), step)
                 step += 1
 
-            # save the best model since begining
-            if abs(np.min(mae) - result[0]) < 0.01:
+            # Update Best Model Saving Logic (using overall_mae)
+            if abs(np.min(mae) - current_overall_mae) < 0.01: # Check if current MAE is the best
                 checkpoint_best_path = os.path.join(args.checkpoints_dir, 'best_mae.pth')
                 torch.save({
                     'model': model_without_ddp.state_dict(),
