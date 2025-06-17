@@ -2,6 +2,7 @@
 """
 Mostly copy-paste from torchvision references.
 """
+import os
 import torch
 import torch.nn as nn
 
@@ -25,7 +26,7 @@ model_urls = {
 
 
 model_paths = {
-    'vgg16_bn': '/apdcephfs/private_changanwang/checkpoints/vgg16_bn-6c64b313.pth',
+    'vgg16_bn': '/home/pravar/abhinav/repo/CrowdCounting-P2PNet/pretrained_ckpt/vgg16_bn-6c64b313.pth',
     'vgg16': '/apdcephfs/private_changanwang/checkpoints/vgg16-397923af.pth',
 
 }
@@ -97,12 +98,20 @@ cfgs = {
     'E': [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 256, 'M', 512, 512, 512, 512, 'M', 512, 512, 512, 512, 'M'],
 }
 
+def download_model(download_path, model_url):
+    os.makedirs(os.path.dirname(download_path), exist_ok=True)
+    torch.hub.download_url_to_file(model_url, download_path)
+    print(f"Model saved in the path: {download_path}")
 
 def _vgg(arch, cfg, batch_norm, pretrained, progress, sync=False, **kwargs):
     if pretrained:
         kwargs['init_weights'] = False
     model = VGG(make_layers(cfgs[cfg], batch_norm=batch_norm, sync=sync), **kwargs)
     if pretrained:
+        
+        if not os.path.exists(model_paths[arch]):
+            download_model(model_paths[arch], 
+                           model_urls[arch])
         state_dict = torch.load(model_paths[arch])
         model.load_state_dict(state_dict)
     return model
