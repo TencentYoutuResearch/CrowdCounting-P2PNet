@@ -1,0 +1,6 @@
+*.jpg
+*.pyc
+**/events.out.tfevents.*
+*.txt
+*.pth
+!SHTechA.pth
